@@ -2,30 +2,30 @@ import java.util.*;
 import java.io.*;
 public class DGDSimulation {
     private static final String IOFOLDER="..\\..\\DGD_IO\\";
-    private static double val(double[] p, double x) {
-        return p[0]+p[1]*x+p[2]*x*x;
+    private static double val(double[] f, double x) {
+        return f[0]+f[1]*x+f[2]*x*x;
     }
-    private static double grad(double[] p, double x) {
-        return p[1]+p[2]*2*x;
+    private static double grad(double[] f, double x) {
+        return f[1]+f[2]*2*x;
     }
     private static class Test {
         int N; String P; long seed;
         int[][] G;
-        double[][] Ps;
+        double[][] funcs;
         double[] locs0;
-        Test(int N, String P, long seed, int[][] G, double[][] Ps, double[] locs0) {
+        Test(int N, String P, long seed, int[][] G, double[][] funcs, double[] locs0) {
             this.N=N;
             this.P=P;
             this.seed=seed;
             this.G=G;
-            this.Ps=Ps;
+            this.funcs=funcs;
             this.locs0=locs0;
         }
         public String toString() {
             StringBuilder out=new StringBuilder("N,P,seed="+N+","+P+","+seed+"\n");
             for (int i=0; i<N; i++)
                 out.append(Arrays.toString(G[i]))
-                        .append(" ").append(Arrays.toString(Ps[i]))
+                        .append(" ").append(Arrays.toString(funcs[i]))
                         .append(" ").append(locs0[i]).append("\n");
             return out.toString();
         }
@@ -52,20 +52,20 @@ public class DGDSimulation {
                 for (int j=0; j<adjs.length; j++)
                     G[v][j]=Integer.parseInt(adjs[j]);
             }
-            double[][] Ps=new double[N][];
+            double[][] funcs=new double[N][];
             for (int i=0; i<N; i++) {
                 String[] l=in.readLine().split(":");
                 int v=Integer.parseInt(l[0]);
                 String[] info=l[1].split(",");
-                Ps[v]=new double[3];
+                funcs[v]=new double[3];
                 for (int j=0; j<3; j++)
-                    Ps[v][j]=Double.parseDouble(info[j]);
+                    funcs[v][j]=Double.parseDouble(info[j]);
             }
             double[] locs0=new double[N];
             String[] info=in.readLine().split(",");
             for (int j=0; j<N; j++)
                 locs0[j]=Double.parseDouble(info[j]);
-            out.add(new Test(N,P,seed,G,Ps,locs0));
+            out.add(new Test(N,P,seed,G,funcs,locs0));
         }
         return out;
     }
@@ -79,15 +79,15 @@ public class DGDSimulation {
             out+=vals[i];
         return out/(A.length-2*amt);
     }
-    private static double meanScr(double[] tP, double[] locs) {
+    private static double meanScr(double[] tfunc, double[] locs) {
         double[] scrs=new double[locs.length];
         for (int i=0; i<locs.length; i++)
-            scrs[i]=val(tP,locs[i]);
+            scrs[i]=val(tfunc,locs[i]);
         return trimmedMean(scrs,0);
     }
     public static void main(String[] args) throws Exception {
         long st=System.currentTimeMillis();
-        int A=1, ITER=10000;
+        int A=2, ITER=10000;
         boolean equivocate=false;
         List<Test> data=graphs(IOFOLDER+"input.txt");
         //System.out.println(data);
@@ -97,7 +97,7 @@ public class DGDSimulation {
         for (Test $:data) {
             {
                 String intro="N,P,seed="+$.N+","+$.P+","+$.seed;
-                if ($.seed%10==0) System.out.println(intro);
+                if ($.seed%10==0) System.out.println(intro+" time="+(System.currentTimeMillis()-st));
                 out.println(intro);
             }
             int N=$.N;
@@ -108,45 +108,50 @@ public class DGDSimulation {
                 for (int i=N; i<N+A; i++)
                     G[i]=tmp;
             }
-            double[][] Ps=$.Ps;
+            int[] indeg=new int[N];
+            for (int i=0; i<N+A; i++)
+                for (int j:G[i])
+                    indeg[j]++;
+            double[][] funcs=$.funcs;
             double[] locs0=$.locs0;
 
-            double[] tP=new double[3];
+            double[] tfunc=new double[3];
             for (int i=0; i<N; i++)
                 for (int j=0; j<3; j++)
-                    tP[j]+=Ps[i][j];
-            for (int j=0; j<3; j++) tP[j]/=N;
-            double optloc=-tP[1]/(2*tP[2]), optscr=val(tP,optloc);
+                    tfunc[j]+=funcs[i][j];
+            for (int j=0; j<3; j++) tfunc[j]/=N;
+            final double optloc=-tfunc[1]/(2*tfunc[2]), optscr=val(tfunc,optloc);
             out.printf("optloc,optscr=%f,%f%n",optloc,optscr);
 
             for (double T:new double[] {0.01,0.005,0.002,0.001}) {
                 out.println("T="+T);
 
-                double[] locs=new double[N];
-                System.arraycopy(locs0,0,locs,0,N);
-                double[] meanloc=new double[ITER+1], meandiff=new double[ITER+1];
-                meanloc[0]=trimmedMean(locs,0); meandiff[0]=meanScr(tP,locs);
+                //TODO??: MAKE ADVERSARY BEHAVE LIKE HONEST NODE, BUT THEIR FUNCTION IS VERY BAD
+                double[] locs=new double[N]; System.arraycopy(locs0,0,locs,0,N);
+                double[] msoldiff=new double[ITER+1], mobjdiff=new double[ITER+1];
+                msoldiff[0]=trimmedMean(locs,0)-optloc; mobjdiff[0]=meanScr(tfunc,locs)-optscr;
                 for (int round=1; round<=ITER; round++) {
-                    int[] amts=new int[N];
-                    for (int i=0; i<N+A; i++)
-                        for (int j:G[i])
-                            amts[j]++;
                     double[][] rvals=new double[N][];
-                    for (int i=0; i<N; i++) rvals[i]=new double[amts[i]];
+                    for (int i=0; i<N; i++) rvals[i]=new double[indeg[i]];
                     int[] idxs=new int[N];
                     for (int i=0; i<N+A; i++)
                         for (int j:G[i])
-                            rvals[j][idxs[j]++]=i<N?locs[i]://1000_000.0;
-                                                            (j%2==0?1000_000.0:-1000_000.0);
+                            rvals[j][idxs[j]++]=i<N?locs[i]:
+                                    (equivocate?(j<N/2?1000_000.0:-1000_000.0):
+                                            1000_000.0);
+                    for (int i=0; i<N; i++)
+                        if (idxs[i]!=indeg[i])
+                            throw new RuntimeException(idxs[i]+" "+indeg[i]);
                     double[] nlocs=new double[N];
                     for (int i=0; i<N; i++)
-                        nlocs[i]=trimmedMean(rvals[i],A)-T*grad(Ps[i],locs[i]);
+                        nlocs[i]=(rvals[i].length<=2*A?locs[i]:trimmedMean(rvals[i],A))-T*grad(funcs[i],locs[i]);
                     locs=nlocs;
-                    meanloc[round]=trimmedMean(locs,0); meandiff[round]=meanScr(tP,locs)-optscr;
+                    msoldiff[round]=trimmedMean(locs,0)-optloc; mobjdiff[round]=meanScr(tfunc,locs)-optscr;
                 }
-
-                out.println("meanloc_fin="+meanloc[ITER]);
-                out.println("meandiff_fin="+meandiff[ITER]);
+                //out.println("msoldiff="+Arrays.toString(msoldiff));
+                //out.println("mobjdiff="+Arrays.toString(mobjdiff));
+                out.println("msoldiff_fin="+msoldiff[ITER]);
+                out.println("mobjdiff_fin="+mobjdiff[ITER]);
             }
         }
         out.close();
