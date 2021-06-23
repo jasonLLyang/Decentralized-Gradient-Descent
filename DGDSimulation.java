@@ -1,7 +1,7 @@
 import java.util.*;
 import java.io.*;
 public class DGDSimulation {
-    private static final String IOFOLDER="..\\..\\DGD_IO\\";
+    private static final String IOFOLDER="..\\..\\DGD_IO\\"; //<--modify file directory if needed
     private static double val(double[] f, double x) {
         return f[0]+f[1]*x+f[2]*x*x;
     }
@@ -87,11 +87,13 @@ public class DGDSimulation {
     }
     public static void main(String[] args) throws Exception {
         long st=System.currentTimeMillis();
-        int A=2, ITER=10000;
-        boolean equivocate=false;
-        List<Test> data=graphs(IOFOLDER+"input.txt");
+        boolean directed=false;
+        int A=1, ITER=10000;
+        boolean equivocate=true;
+        List<Test> data=graphs(IOFOLDER+"input"+(directed?"_directed":"")+".txt");
+        System.out.println("# tests="+data.size());
         //System.out.println(data);
-        PrintWriter out=new PrintWriter(new FileWriter(IOFOLDER+"stats_out_A="+A+(equivocate?"_equivocate":"")+".txt"));
+        PrintWriter out=new PrintWriter(new FileWriter(IOFOLDER+"out"+(directed?"_directed":"")+"_A="+A+(A>0&&equivocate?"_equivocate":"")+".txt"));
         out.printf("A,ITER=%d,%d%n",A,ITER);
         System.out.printf("A,ITER=%d,%d%n",A,ITER);
         for (Test $:data) {
@@ -125,8 +127,6 @@ public class DGDSimulation {
 
             for (double T:new double[] {0.01,0.005,0.002,0.001}) {
                 out.println("T="+T);
-
-                //TODO??: MAKE ADVERSARY BEHAVE LIKE HONEST NODE, BUT THEIR FUNCTION IS VERY BAD
                 double[] locs=new double[N]; System.arraycopy(locs0,0,locs,0,N);
                 double[] msoldiff=new double[ITER+1], mobjdiff=new double[ITER+1];
                 msoldiff[0]=trimmedMean(locs,0)-optloc; mobjdiff[0]=meanScr(tfunc,locs)-optscr;
@@ -139,19 +139,23 @@ public class DGDSimulation {
                             rvals[j][idxs[j]++]=i<N?locs[i]:
                                     (equivocate?(j<N/2?1000_000.0:-1000_000.0):
                                             1000_000.0);
-                    for (int i=0; i<N; i++)
+                    /*for (int i=0; i<N; i++)
                         if (idxs[i]!=indeg[i])
-                            throw new RuntimeException(idxs[i]+" "+indeg[i]);
+                            throw new RuntimeException(idxs[i]+" "+indeg[i]);*/
                     double[] nlocs=new double[N];
                     for (int i=0; i<N; i++)
                         nlocs[i]=(rvals[i].length<=2*A?locs[i]:trimmedMean(rvals[i],A))-T*grad(funcs[i],locs[i]);
                     locs=nlocs;
                     msoldiff[round]=trimmedMean(locs,0)-optloc; mobjdiff[round]=meanScr(tfunc,locs)-optscr;
                 }
-                //out.println("msoldiff="+Arrays.toString(msoldiff));
-                //out.println("mobjdiff="+Arrays.toString(mobjdiff));
+                if (data.size()<=10) {
+                    out.println("msoldiff="+Arrays.toString(msoldiff));
+                    out.println("mobjdiff="+Arrays.toString(mobjdiff));
+                    out.println("locs_fin="+Arrays.toString(locs));
+                }
                 out.println("msoldiff_fin="+msoldiff[ITER]);
                 out.println("mobjdiff_fin="+mobjdiff[ITER]);
+                out.println("locs_fin="+Arrays.toString(locs));
             }
         }
         out.close();
